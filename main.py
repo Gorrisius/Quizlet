@@ -204,7 +204,7 @@ async def handle_test_selection(callback: types.CallbackQuery, callback_data: Te
         await callback.answer()
         return
         
-    user_id = callback.fromuser.id
+    user_id = callback.from_user.id
     user_test_states[user_id] = [] 
     user_scores[user_id] = 0 
     
@@ -285,7 +285,6 @@ async def start_web_server():
     app.router.add_get('/', ping_handler)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Render автоматично надає порт через змінну середовища PORT
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
@@ -295,7 +294,6 @@ async def main():
     print("Запуск...")
     await bot.delete_webhook(drop_pending_updates=True)
     
-    # Запускаємо сервер і бота одночасно
     await start_web_server()
     await dp.start_polling(bot)
 
