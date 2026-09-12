@@ -25,22 +25,20 @@ def get_test_questions(test_id: int):
     response = supabase.table("questions").select("*").eq("test_id", test_id).order("question_id").execute()
     return response.data
 
-def get_question_answers(question_id: int):
-    response = supabase.table("answers").select("*").eq("question_id", question_id).order("answer_id").execute()
+# Оновлено: тепер функція шукає відповіді за test_id та question_id
+def get_question_answers(test_id: int, question_id: int):
+    response = supabase.table("answers").select("*").eq("test_id", test_id).eq("question_id", question_id).order("answer_id").execute()
     return response.data
 
 def save_result(user_id: int, test_id: int, score: int):
-    # Шукаємо, чи є вже збережений результат цього користувача для цього тесту
     existing = supabase.table("results").select("*").eq("user_id", user_id).eq("test_id", test_id).execute()
     
     if existing.data:
-        # Якщо є, беремо його ID і оновлюємо бали (старий запис перезаписується)
         result_id = existing.data[0]['result_id']
         supabase.table("results").update({
             "score": score
         }).eq("result_id", result_id).execute()
     else:
-        # Якщо немає, створюємо новий запис
         supabase.table("results").insert({
             "user_id": user_id,
             "test_id": test_id,

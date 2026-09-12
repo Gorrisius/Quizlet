@@ -1,5 +1,7 @@
 import asyncio
 import os
+import random
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
@@ -20,6 +22,17 @@ ADMIN_IDS = [int(x.strip()) for x in admin_ids_str.split(",") if x.strip()]
 
 user_test_states = {}
 user_scores = {} 
+
+MOTIVATION_PHRASES = [
+    "Ти молодець! 🎉",
+    "Супер! Правильно 🚀",
+    "Так тримати! 👏",
+    "Блискуча відповідь! ✨",
+    "Ідеально! 🧠",
+    "Просто вогонь! 🔥",
+    "Чудова робота! 🌟",
+    "Точно в ціль! 🎯"
+]
 
 class TestCallback(CallbackData, prefix="test"):
     test_id: int
@@ -138,27 +151,22 @@ async def handle_leaderboard_selection(callback: types.CallbackQuery, callback_d
 
 async def send_question(message: types.Message, test_id: int, questions: list, q_index: int, user_id: int):
     question = questions[q_index]
-    answers = get_question_answers(question['question_id'])
+    answers = get_question_answers(test_id, question['question_id'])
     
     if user_id not in user_test_states:
         user_test_states[user_id] = []
         
     selected = user_test_states[user_id]
-    
     q_type = question.get('question_type', 'multiple')
     hint = "(Оберіть один варіант)" if q_type == 'single' else "(Оберіть всі правильні варіанти)"
-    
-    # Формуємо текст повідомлення
     text = f"❓ **Питання {q_index + 1} з {len(questions)}:** {hint}\n\n*{question['text']}*\n\n"
     
     builder = InlineKeyboardBuilder()
     number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     
-    # Додаємо варіанти відповідей у текст повідомлення та створюємо кнопки-цифри
     for i, ans in enumerate(answers):
         num_icon = number_emojis[i] if i < len(number_emojis) else f"{i+1}."
         text += f"{num_icon} {ans['text']}\n\n"
-        
         prefix = "✅ " if ans['answer_id'] in selected else ""
         
         builder.button(
@@ -171,10 +179,7 @@ async def send_question(message: types.Message, test_id: int, questions: list, q
             )
         )
         
-    # Групуємо кнопки з цифрами по 2 у ряд для компактності
     builder.adjust(2) 
-    
-    # Додаємо кнопку підтвердження окремим рядком на всю ширину
     builder.row(
         types.InlineKeyboardButton(
             text="➡️ Підтвердити відповідь",
@@ -199,7 +204,7 @@ async def handle_test_selection(callback: types.CallbackQuery, callback_data: Te
         await callback.answer()
         return
         
-    user_id = callback.from_user.id
+    user_id = callback.fromuser.id
     user_test_states[user_id] = [] 
     user_scores[user_id] = 0 
     
@@ -213,7 +218,6 @@ async def handle_answer_toggle(callback: types.CallbackQuery, callback_data: Ans
     
     questions = get_test_questions(callback_data.test_id)
     current_question = questions[callback_data.question_index]
-    
     q_type = current_question.get('question_type', 'multiple')
     
     if user_id not in user_test_states:
@@ -244,19 +248,21 @@ async def handle_answer_submit(callback: types.CallbackQuery, callback_data: Ans
         
     questions = get_test_questions(callback_data.test_id)
     current_question = questions[callback_data.question_index]
-    all_answers = get_question_answers(current_question['question_id'])
+    all_answers = get_question_answers(callback_data.test_id, current_question['question_id'])
     
     correct_ids = [ans['answer_id'] for ans in all_answers if ans.get('is_correct')]
+    feedback_text = "Відповідь прийнято! 📝" 
     
     if set(selected) == set(correct_ids):
         user_scores[user_id] = user_scores.get(user_id, 0) + 1
+        feedback_text = random.choice(MOTIVATION_PHRASES)
         
     user_test_states[user_id] = []
-    
     next_q_index = callback_data.question_index + 1
     
     if next_q_index < len(questions):
         await send_question(callback.message, callback_data.test_id, questions, next_q_index, user_id)
+        await callback.answer(feedback_text)
     else:
         final_score = user_scores.get(user_id, 0)
         save_result(user_id, callback_data.test_id, final_score)
@@ -268,12 +274,29 @@ async def handle_answer_submit(callback: types.CallbackQuery, callback_data: Ans
             parse_mode="Markdown"
         )
         user_scores.pop(user_id, None)
-        
-    await callback.answer()
+        await callback.answer(feedback_text)
+
+# --- БЛОК ВЕБ-СЕРВЕРА ДЛЯ RENDER ---
+async def ping_handler(request):
+    return web.Response(text="Бот працює!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', ping_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render автоматично надає порт через змінну середовища PORT
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Веб-сервер запущено на порту {port}")
 
 async def main():
-    print("Бот запущено!")
+    print("Запуск...")
     await bot.delete_webhook(drop_pending_updates=True)
+    
+    # Запускаємо сервер і бота одночасно
+    await start_web_server()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
