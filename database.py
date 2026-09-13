@@ -59,6 +59,10 @@ def get_question_answers(test_id: int, question_id: int):
 
 def save_result(user_id: int, test_id: int, score: int):
     try:
+        # Спочатку видаляємо старий результат користувача для цього тесту
+        supabase.table("results").delete().eq("user_id", user_id).eq("test_id", test_id).execute()
+        
+        # Записуємо новий результат
         supabase.table("results").insert({
             "user_id": user_id,
             "test_id": test_id,
