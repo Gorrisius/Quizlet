@@ -1,64 +1,99 @@
 import os
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 from supabase import create_client, Client
 
-load_dotenv(find_dotenv())
+load_dotenv()
 
-url: str = os.environ.get("SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def add_user(user_id: int, username: str, first_name: str):
-    user = supabase.table("users").select("*").eq("user_id", user_id).execute()
-    if not user.data:
-        supabase.table("users").insert({
+    try:
+        supabase.table("users").upsert({
             "user_id": user_id,
             "username": username,
             "first_name": first_name
         }).execute()
+    except Exception as e:
+        print(f"Помилка додавання користувача: {e}")
 
 def get_all_tests():
-    response = supabase.table("tests").select("*").execute()
-    return response.data
+    try:
+        response = supabase.table("tests").select("*").order("test_id").execute()
+        return response.data
+    except Exception as e:
+        print(f"Помилка завантаження тестів: {e}")
+        return []
 
 def get_test_questions(test_id: int):
-    response = supabase.table("questions").select("*").eq("test_id", test_id).order("question_id").execute()
-    return response.data
+    try:
+        response = (
+            supabase.table("questions")
+            .select("*")
+            .eq("test_id", test_id)
+            .order("question_id")
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Помилка завантаження питань: {e}")
+        return []
 
-# Оновлено: тепер функція шукає відповіді за test_id та question_id
 def get_question_answers(test_id: int, question_id: int):
-    response = supabase.table("answers").select("*").eq("test_id", test_id).eq("question_id", question_id).order("answer_id").execute()
-    return response.data
+    try:
+        # Подвійна фільтрація, щоб уникнути дублікатів з інших тестів
+        response = (
+            supabase.table("answers")
+            .select("*")
+            .eq("test_id", test_id)
+            .eq("question_id", question_id)
+            .order("answer_id")
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Помилка завантаження відповідей: {e}")
+        return []
 
 def save_result(user_id: int, test_id: int, score: int):
-    existing = supabase.table("results").select("*").eq("user_id", user_id).eq("test_id", test_id).execute()
-    
-    if existing.data:
-        result_id = existing.data[0]['result_id']
-        supabase.table("results").update({
-            "score": score
-        }).eq("result_id", result_id).execute()
-    else:
+    try:
         supabase.table("results").insert({
             "user_id": user_id,
             "test_id": test_id,
             "score": score
         }).execute()
+    except Exception as e:
+        print(f"Помилка збереження результату: {e}")
 
 def get_test_leaderboard(test_id: int):
-    results = supabase.table("results").select("*").eq("test_id", test_id).order("score", desc=True).limit(10).execute()
-    if not results.data:
+    try:
+        response = (
+            supabase.table("results")
+            .select("score, user_id")
+            .eq("test_id", test_id)
+            .order("score", desc=True)
+            .limit(10)
+            .execute()
+        )
+        
+        leaderboard = []
+        for row in response.data:
+            user_id = row.get("user_id")
+            score = row.get("score")
+            
+            user_response = supabase.table("users").select("first_name").eq("user_id", user_id).execute()
+            name = "Невідомий"
+            if user_response.data:
+                name = user_response.data[0].get("first_name", "Невідомий")
+                
+            leaderboard.append({
+                "name": name,
+                "score": score
+            })
+            
+        return leaderboard
+    except Exception as e:
+        print(f"Помилка завантаження лідерборду: {e}")
         return []
-        
-    user_ids = [r['user_id'] for r in results.data]
-    
-    users = supabase.table("users").select("*").in_("user_id", user_ids).execute()
-    users_dict = {u['user_id']: u for u in users.data}
-    
-    leaderboard = []
-    for r in results.data:
-        user = users_dict.get(r['user_id'], {})
-        name = user.get('first_name') or user.get('username') or "Невідомий"
-        leaderboard.append({'name': name, 'score': r['score']})
-        
-    return leaderboard
